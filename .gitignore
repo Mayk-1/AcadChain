@@ -1,0 +1,56 @@
+# ==========================================
+# 1. ENTORNOS VIRTUALES (¡Súper importante!)
+# ==========================================
+# Ignora la carpeta donde están las librerías instaladas de Python. 
+# Tu compañero debe crear su propio entorno virtual localmente.
+env/
+venv/
+.venv/
+ENV/
+
+# ==========================================
+# 2. ARCHIVOS COMPILADOS DE PYTHON
+# ==========================================
+# Archivos temporales que genera Python al ejecutar el código
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ==========================================
+# 3. ARCHIVOS DE CONFIGURACIÓN DEL EDITOR
+# ==========================================
+# Configuraciones locales de tu VS Code
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# ==========================================
+# 4. BASES DE DATOS LOCALES Y LOGS (Si aplica)
+# ==========================================
+# Por si acaso usaste SQLite en algún momento
+*.sqlite3
+*.log
+
+# ==========================================
+# VARIABLES DE ENTORNO / SECRETOS
+# ==========================================
+# Contiene el SECRET_KEY y las credenciales reales de la base de datos.
+# NUNCA debe subirse al repositorio. Usa .env.example como plantilla.
+.env
+
+# ==========================================
+# 5. ARCHIVOS MULTIMEDIA / SUBIDOS (MEDIA)
+# ==========================================
+# Ignora los PDFs reales que se suban a la aplicación en el futuro
+media/
+certificados/
+
+# ==========================================
+# 6. CONFIGURACIONES DE ENTORNO SENSISBLES
+# ==========================================
+.env
