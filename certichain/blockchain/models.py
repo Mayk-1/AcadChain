@@ -23,6 +23,13 @@ class CertificadoModel(models.Model):
     carrera = models.CharField(max_length=100, verbose_name="Carrera Universitaria")
     hash_certificado = models.CharField(max_length=64, unique=True, verbose_name="SHA-256 del Certificado")
     fecha_registro = models.DateTimeField(auto_now_add=True)
+
+    # Prueba de Merkle (lista de hashes hermanos + posición) generada al
+    # momento de minar el bloque. Permite verificar criptográficamente
+    # que este certificado pertenece al bloque, sin tener que confiar
+    # ciegamente en la relación de base de datos ni recorrer los demás
+    # certificados del lote.
+    merkle_proof = models.JSONField(default=list, blank=True, verbose_name="Prueba de Merkle")
     
     # Relación: Un bloque puede tener muchos certificados (Árbol de Merkle).
     # null=True permite que el certificado se suba y quede "pendiente" hasta que se genere un bloque.

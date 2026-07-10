@@ -62,10 +62,14 @@ class Command(BaseCommand):
                 block_hash=hash_bloque_actual
             )
 
-            # 6. VINCULAR LOS CERTIFICADOS AL BLOQUE CREADO
-            # Actualizamos de golpe el campo 'bloque' de todo este lote
-            id_certificados_lote = [cert.id for cert in lote_actual]
-            CertificadoModel.objects.filter(id__in=id_certificados_lote).update(bloque=nuevo_bloque)
+            # 6. VINCULAR LOS CERTIFICADOS AL BLOQUE Y GUARDAR SU PRUEBA DE MERKLE
+            # Cada certificado necesita su propio camino de hashes (arbol_merkle.proofs[i])
+            # para poder demostrar después, por su cuenta, que pertenece a este bloque.
+            for cert, prueba_cert in zip(lote_actual, arbol_merkle.proofs):
+                cert.bloque = nuevo_bloque
+                cert.merkle_proof = prueba_cert
+
+            CertificadoModel.objects.bulk_update(lote_actual, ['bloque', 'merkle_proof'])
 
             self.stdout.write(self.style.SUCCESS(
                 f"-> Bloque #{nuevo_index} creado exitosamente. Hash: {hash_bloque_actual[:15]}... | Contiene {len(lote_actual)} certificados."

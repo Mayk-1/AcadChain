@@ -5,6 +5,7 @@ import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import BloqueModel, CertificadoModel
+from .blockchain_core import verificar_prueba_merkle, validar_cadena
 
 def listar_blockchain(request):
     """
@@ -28,6 +29,22 @@ def listar_blockchain(request):
         })
         
     return JsonResponse({'longitud_cadena': len(lista_bloques), 'blockchain': lista_bloques}, safe=False)
+
+
+def validar_integridad_cadena(request):
+    """
+    Endpoint GET: Recorre toda la cadena de bloques y confirma que
+    cada eslabón (previous_hash <-> block_hash) sigue siendo válido,
+    es decir, que ningún bloque fue alterado, borrado o insertado
+    fuera de orden desde que se minó.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Método no permitido. Use GET.'}, status=405)
+
+    resultado = validar_cadena()
+    status_code = 200 if resultado['valida'] else 409
+
+    return JsonResponse(resultado, status=status_code)
 
 
 @csrf_exempt # Desactivamos CSRF temporalmente solo para facilitar pruebas de desarrollo (POST)
@@ -63,6 +80,24 @@ def verificar_certificado(request):
                 'mensaje': 'El certificado existe pero aún está en la cola de procesamiento (no minado).'
             }, status=200)
             
+        # Si tiene bloque asignado, verificamos CRIPTOGRÁFICAMENTE que el
+        # certificado realmente pertenece a ese bloque, reconstruyendo la
+        # raíz de Merkle desde su hash y su prueba guardada. No nos basta
+        # con que la base de datos diga que están relacionados: si alguien
+        # edita un registro directo en MySQL, esta verificación lo detecta
+        # porque la raíz recalculada ya no coincidiría con la del bloque.
+        prueba_valida = verificar_prueba_merkle(
+            hash_hoja=certificado.hash_certificado,
+            prueba=certificado.merkle_proof,
+            raiz_esperada=certificado.bloque.merkle_root
+        )
+
+        if not prueba_valida:
+            return JsonResponse({
+                'autentico': False,
+                'mensaje': 'ALERTA: El certificado no coincide con la prueba criptográfica de su bloque. Los datos pudieron haber sido alterados.'
+            }, status=409)
+
         # Si tiene bloque asignado, devolvemos toda la traza de seguridad criptográfica
         return JsonResponse({
             'autentico': True,
@@ -77,7 +112,9 @@ def verificar_certificado(request):
                 'merkle_root_del_bloque': certificado.bloque.merkle_root,
                 'hash_del_bloque': certificado.bloque.block_hash,
                 'hash_bloque_anterior': certificado.bloque.previous_hash,
-                'fecha_sellado': certificado.bloque.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                'fecha_sellado': certificado.bloque.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                'prueba_merkle': certificado.merkle_proof,
+                'prueba_verificada': prueba_valida
             }
         }, status=200)
         
