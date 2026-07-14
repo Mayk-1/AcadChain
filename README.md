@@ -45,7 +45,7 @@ pip install -r requirements.txt
 CREATE DATABASE certichain_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-Adaptar los campos segun el archivo .env.example en un archivo .env en la carpeta principal certichain donde se encuentra manage.py
+Adaptar las variables de entorno segun el archivo .env.example en un archivo .env en la carpeta principal certichain donde se encuentra manage.py
 
 ```
 DB_NAME=certichain_db
@@ -73,4 +73,11 @@ python manage.py minar_bloques
 
 ```bash
 python manage.py runserver
+```
+
+### Servir el html por http localmente o si puedes de otra manera
+
+Ejecutar dentro de la carpeta frontend y configurar el puerto para las variables de entorno
+```bash
+python -m http.server 'puerto'
 ```
