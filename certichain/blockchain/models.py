@@ -30,6 +30,13 @@ class CertificadoModel(models.Model):
     # ciegamente en la relación de base de datos ni recorrer los demás
     # certificados del lote.
     merkle_proof = models.JSONField(default=list, blank=True, verbose_name="Prueba de Merkle")
+
+    # El PDF real del certificado, guardado como binario directo en la
+    # fila de MySQL (columna LONGBLOB). Es un dato aparte del hash: no
+    # participa en el árbol de Merkle ni en la blockchain, solo se
+    # conserva como respaldo del documento original. editable=False
+    # porque no tiene sentido editarlo desde el admin de Django.
+    archivo_pdf = models.BinaryField(null=True, blank=True, editable=False, verbose_name="Archivo PDF (binario)")
     
     # Relación: Un bloque puede tener muchos certificados (Árbol de Merkle).
     # null=True permite que el certificado se suba y quede "pendiente" hasta que se genere un bloque.
