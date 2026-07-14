@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcadChain — Registrar certificado</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #10151f;
+    --ink-2: #182033;
+    --ink-3: #212b42;
+    --parchment: #fbf6ec;
+    --parchment-dim: #f1e9d8;
+    --parchment-deep: #e8ddc4;
+    --brass: #ab7f1e;
+    --brass-bright: #c9a227;
+    --verdigris: #3a6d65;
+    --verdigris-dim: #2c534d;
+    --ash: #9aa3b6;
+    --ash-dim: #6b7386;
+    --text-on-parchment: #23293a;
+    --text-on-parchment-dim: #565f72;
+    --alert: #9c3a44;
+    --alert-bg: #f3e3e0;
+
+    --font-display: "Fraunces", serif;
+    --font-body: "Inter", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; font-family: var(--font-body); min-height: 100vh; }
+  a { color: var(--brass); }
+  ::selection { background: var(--brass-bright); color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--brass-bright); outline-offset: 3px; }
+
+  .book { display: grid; grid-template-columns: minmax(280px, 34%) 1fr; min-height: 100vh; }
+
+  .cover {
+    background: var(--ink); color: var(--parchment);
+    padding: 52px 44px; display: flex; flex-direction: column; position: relative;
+  }
+  .cover::after {
+    content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 34px;
+    background: linear-gradient(to right, transparent, rgba(0,0,0,0.28)); pointer-events: none;
+  }
+  .mark { width: 34px; height: 34px; flex-shrink: 0; }
+  .brand-row { display: flex; align-items: center; gap: 12px; }
+  .brand { font-family: var(--font-display); font-size: 19px; font-weight: 600; letter-spacing: 0.02em; }
+  .brand span { color: var(--brass-bright); }
+
+  .nav-links { display: flex; gap: 18px; margin-top: 8px; }
+  .nav-links a {
+    font-size: 12.5px; text-decoration: none; color: var(--ash);
+    font-weight: 600; letter-spacing: 0.02em; border-bottom: 1px solid transparent;
+  }
+  .nav-links a:hover { color: var(--parchment); border-color: var(--brass-bright); }
+  .nav-links a.current { color: var(--brass-bright); }
+
+  .cover h1 {
+    font-family: var(--font-display); font-weight: 600; font-size: clamp(30px, 3.4vw, 40px);
+    line-height: 1.18; margin: 44px 0 16px; max-width: 16ch;
+  }
+  .cover .tagline { color: var(--ash); font-size: 14.5px; line-height: 1.65; max-width: 38ch; margin: 0; }
+
+  .badge-privado {
+    display: inline-flex; align-items: center; gap: 7px;
+    margin-top: 26px; padding: 7px 13px;
+    background: rgba(201,162,39,0.12); border: 1px solid rgba(201,162,39,0.3);
+    border-radius: 999px; font-size: 12px; color: var(--brass-bright); font-weight: 600;
+    width: fit-content;
+  }
+  .badge-privado svg { width: 13px; height: 13px; }
+
+  .stat-block { margin-top: auto; padding-top: 36px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .stat-number { font-family: var(--font-mono); font-size: 34px; font-weight: 600; color: var(--brass-bright); line-height: 1; letter-spacing: -0.01em; }
+  .stat-label { font-size: 12.5px; color: var(--ash-dim); margin-top: 8px; line-height: 1.5; }
+  .stat-label strong { color: var(--ash); font-weight: 600; }
+  .cover-foot { margin-top: 26px; font-size: 11.5px; color: var(--ash-dim); line-height: 1.6; }
+
+  .page { background: var(--parchment); color: var(--text-on-parchment); padding: 64px clamp(28px, 6vw, 84px); display: flex; flex-direction: column; }
+  .eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--brass); font-weight: 700; margin: 0 0 10px; }
+  .page h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(22px, 2.6vw, 27px); margin: 0 0 34px; max-width: 34ch; }
+
+  form { max-width: 480px; }
+
+  .field { margin-bottom: 22px; }
+  label { display: block; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-on-parchment-dim); font-weight: 600; margin-bottom: 10px; }
+  .hint { font-size: 12px; color: #8a8264; margin-top: 6px; }
+
+  input[type="text"] {
+    width: 100%; background: #fff; border: 1px solid var(--parchment-deep); border-radius: 8px;
+    padding: 14px 16px; font-family: var(--font-body); font-size: 15px; color: var(--text-on-parchment);
+  }
+  input[type="text"].mono { font-family: var(--font-mono); }
+  input[type="text"]::placeholder { color: #b3ab97; }
+  input[type="text"]:focus { border-color: var(--verdigris); }
+
+  .dropzone {
+    border: 1.5px dashed var(--parchment-deep); border-radius: 8px; padding: 30px 20px;
+    text-align: center; cursor: pointer; background: #fff;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--verdigris); background: #f4faf9; }
+  .dropzone svg { width: 28px; height: 28px; margin-bottom: 10px; color: var(--text-on-parchment-dim); }
+  .dropzone p { margin: 0; font-size: 14px; color: var(--text-on-parchment-dim); }
+  .dropzone .filename { font-family: var(--font-mono); color: var(--brass); font-size: 13px; margin-top: 8px; word-break: break-all; }
+  input[type="file"] { display: none; }
+
+  .submit-btn {
+    margin-top: 6px; width: 100%; background: var(--ink); color: var(--parchment); border: none;
+    padding: 15px; border-radius: 8px; font-family: var(--font-body); font-weight: 700; font-size: 15px;
+    cursor: pointer; transition: background 0.2s ease, transform 0.1s ease;
+  }
+  .submit-btn:hover:not(:disabled) { background: var(--ink-2); }
+  .submit-btn:active:not(:disabled) { transform: scale(0.99); }
+  .submit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .spinner {
+    display: inline-block; width: 15px; height: 15px; border: 2px solid rgba(251,246,236,0.3);
+    border-top-color: var(--parchment); border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: -3px; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #resultado { margin-top: 30px; max-width: 480px; }
+
+  .result-card {
+    position: relative; border-radius: 12px; padding: 26px 26px 22px; overflow: hidden;
+    animation: rise 0.4s cubic-bezier(.2,.7,.3,1) both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .result-card.exito { background: var(--parchment-dim); border: 1px solid var(--parchment-deep); }
+  .result-card.exito::before {
+    content: ""; position: absolute; inset: 9px; border: 1.5px dashed rgba(35,41,58,0.14);
+    border-radius: 7px; pointer-events: none;
+  }
+  .result-card.error { background: var(--alert-bg); border: 1px solid #e3c3c1; }
+
+  .glyph { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  .result-card.exito .glyph { background: #d7e6df; color: var(--verdigris-dim); }
+  .result-card.error .glyph { background: #e6c9c7; color: var(--alert); }
+  .glyph svg { width: 18px; height: 18px; }
+
+  .status-word { font-family: var(--font-display); font-weight: 700; font-size: 20px; margin: 0 0 6px; }
+  .result-card.exito .status-word { color: var(--verdigris-dim); }
+  .result-card.error .status-word { color: var(--alert); }
+
+  .status-msg { font-size: 14px; line-height: 1.5; margin: 0; color: var(--text-on-parchment-dim); }
+
+  .hash-line {
+    margin-top: 16px; padding: 12px 14px; background: #fff; border: 1px solid var(--parchment-deep);
+    border-radius: 7px; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-on-parchment);
+    word-break: break-all;
+  }
+  .hash-line .k { display: block; font-family: var(--font-body); font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #8a8264; margin-bottom: 5px; }
+
+  @media (max-width: 860px) {
+    .book { grid-template-columns: 1fr; }
+    .cover { padding: 36px 26px; }
+    .cover::after { display: none; }
+    .cover h1 { margin: 28px 0 12px; max-width: none; }
+    .stat-block { margin-top: 28px; padding-top: 24px; }
+    .page { padding: 40px 24px 64px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="book">
+  <aside class="cover">
+    <div class="brand-row">
+      <svg class="mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="20" cy="20" r="19" stroke="#c9a227" stroke-width="1.5"/>
+        <path d="M20 8 L30 13.5 V26.5 L20 32 L10 26.5 V13.5 Z" stroke="#3a6d65" stroke-width="1.4"/>
+        <circle cx="20" cy="20" r="4" fill="#c9a227"/>
+      </svg>
+      <div class="brand">Acad<span>Chain</span></div>
+    </div>
+
+    <div class="nav-links">
+      <a href="verificar.html">Verificar</a>
+      <a href="registrar.html" class="current">Registrar</a>
+      <a href="explorador.html">Explorador</a>
+    </div>
+
+    <h1>Sellar un nuevo certificado</h1>
+    <p class="tagline">Al registrar, se calcula el SHA-256 real del PDF y queda en cola. El sello definitivo (su lugar en la blockchain) ocurre en el siguiente minado.</p>
+
+    <div class="badge-privado">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+      Uso interno de la universidad
+    </div>
+
+    <div class="stat-block">
+      <div class="stat-number" id="stat-numero">—</div>
+      <div class="stat-label" id="stat-label">Consultando la cadena…</div>
+    </div>
+
+    <p class="cover-foot">El PDF se guarda como binario en MySQL, aparte del hash. Solo el hash participa en el árbol de Merkle.</p>
+  </aside>
+
+  <main class="page">
+    <p class="eyebrow">Registro</p>
+    <h2>Datos del certificado y del alumno</h2>
+
+    <form id="form-registro">
+      <div class="field">
+        <label for="input-codigo">Código único</label>
+        <input type="text" class="mono" id="input-codigo" placeholder="EST-2026-002" autocomplete="off" required>
+      </div>
+
+      <div class="field">
+        <label for="input-nombre">Nombre del alumno</label>
+        <input type="text" id="input-nombre" placeholder="Ej. María Fernanda Torres" autocomplete="off" required>
+      </div>
+
+      <div class="field">
+        <label for="input-carrera">Carrera</label>
+        <input type="text" id="input-carrera" placeholder="Ej. Ingeniería de Sistemas" autocomplete="off" required>
+      </div>
+
+      <div class="field">
+        <label>Documento PDF</label>
+        <div class="dropzone" id="dropzone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+          <p>Arrastra el PDF aquí o haz clic para elegirlo</p>
+          <div class="filename" id="pdf-filename"></div>
+        </div>
+        <input type="file" id="input-pdf" accept="application/pdf">
+        <p class="hint">Máximo 10 MB. Solo formato PDF.</p>
+      </div>
+
+      <button class="submit-btn" type="submit" id="btn-registrar" disabled>Registrar certificado</button>
+    </form>
+
+    <div id="resultado"></div>
+  </main>
+</div>
+
+<script>
+  const API_BASE_URL = "http://127.0.0.1:8000";
+
+  (async function cargarEstadisticas() {
+    const numEl = document.getElementById('stat-numero');
+    const labelEl = document.getElementById('stat-label');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/blockchain/`);
+      const data = await res.json();
+      const totalCertificados = (data.blockchain || []).reduce((acc, b) => acc + (b.total_certificados || 0), 0);
+      numEl.textContent = totalCertificados.toLocaleString('es');
+      labelEl.innerHTML = `certificados sellados en <strong>${data.longitud_cadena}</strong> bloque${data.longitud_cadena === 1 ? '' : 's'}`;
+    } catch (err) {
+      numEl.textContent = '—';
+      labelEl.textContent = 'No se pudo conectar con la blockchain';
+    }
+  })();
+
+  const dropzone = document.getElementById('dropzone');
+  const inputPdf = document.getElementById('input-pdf');
+  const pdfFilename = document.getElementById('pdf-filename');
+  const btnRegistrar = document.getElementById('btn-registrar');
+  const inputCodigo = document.getElementById('input-codigo');
+  const inputNombre = document.getElementById('input-nombre');
+  const inputCarrera = document.getElementById('input-carrera');
+  let archivoSeleccionado = null;
+
+  function revisarFormularioCompleto() {
+    const completo = inputCodigo.value.trim() && inputNombre.value.trim() && inputCarrera.value.trim() && archivoSeleccionado;
+    btnRegistrar.disabled = !completo;
+  }
+
+  [inputCodigo, inputNombre, inputCarrera].forEach(el => el.addEventListener('input', revisarFormularioCompleto));
+
+  dropzone.addEventListener('click', () => inputPdf.click());
+
+  ['dragover', 'dragleave', 'drop'].forEach(evt => {
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.toggle('drag', evt === 'dragover');
+    });
+  });
+
+  dropzone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file) seleccionarArchivo(file);
+  });
+
+  inputPdf.addEventListener('change', () => {
+    if (inputPdf.files[0]) seleccionarArchivo(inputPdf.files[0]);
+  });
+
+  function seleccionarArchivo(file) {
+    if (file.type !== 'application/pdf') {
+      pdfFilename.textContent = 'Ese archivo no es un PDF. Elige un archivo .pdf';
+      archivoSeleccionado = null;
+      revisarFormularioCompleto();
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      pdfFilename.textContent = 'El archivo supera los 10 MB permitidos.';
+      archivoSeleccionado = null;
+      revisarFormularioCompleto();
+      return;
+    }
+    archivoSeleccionado = file;
+    pdfFilename.textContent = file.name;
+    revisarFormularioCompleto();
+  }
+
+  const resultadoEl = document.getElementById('resultado');
+
+  function renderExito(data) {
+    resultadoEl.innerHTML = `
+      <div class="result-card exito">
+        <div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <div class="status-word">Registrado</div>
+        <p class="status-msg">${data.mensaje}</p>
+        <div class="hash-line"><span class="k">Hash SHA-256 del PDF</span>${data.hash_sha256}</div>
+      </div>`;
+  }
+
+  function renderErrorMsg(mensaje) {
+    resultadoEl.innerHTML = `
+      <div class="result-card error">
+        <div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L2.7 17a2 2 0 001.7 3h15.2a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg></div>
+        <div class="status-word">No se pudo registrar</div>
+        <p class="status-msg">${mensaje}</p>
+      </div>`;
+  }
+
+  document.getElementById('form-registro').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!archivoSeleccionado) return;
+
+    const btn = btnRegistrar;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Registrando…';
+    resultadoEl.innerHTML = '';
+
+    const formData = new FormData();
+    formData.append('codigo_unico', inputCodigo.value.trim());
+    formData.append('nombre_alumno', inputNombre.value.trim());
+    formData.append('carrera', inputCarrera.value.trim());
+    formData.append('certificado_pdf', archivoSeleccionado);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/registrar-certificado/`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        renderExito(data);
+        document.getElementById('form-registro').reset();
+        pdfFilename.textContent = '';
+        archivoSeleccionado = null;
+      } else {
+        renderErrorMsg(data.error || 'Ocurrió un error al registrar el certificado.');
+      }
+    } catch (err) {
+      renderErrorMsg('No se pudo conectar con el servidor. Confirma que el backend Django esté corriendo y que CORS_ALLOWED_ORIGINS lo permita.');
+    } finally {
+      btn.textContent = 'Registrar certificado';
+      revisarFormularioCompleto();
+    }
+  });
+</script>
+</body>
+</html>
