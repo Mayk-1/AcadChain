@@ -24,7 +24,6 @@ Abre tu terminal, navega hasta tu carpeta de proyectos y ejecuta:
 ```bash
 git clone https://github.com/Mayk-1/AcadChain
 git pull origin main
-cd certichain
 ```
 
 ### Crear y activar el entorno virtual
@@ -46,24 +45,20 @@ pip install -r requirements.txt
 CREATE DATABASE certichain_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-Abrir el archivo settings.py y modifica las credenciales de tu base de datos
+Adaptar los campos segun el archivo .env.example en un archivo .env en la carpeta principal certichain donde se encuentra manage.py
 
 ```
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'certichain_db',
-        'USER': 'tu_usuario_local',
-        'PASSWORD': 'tu_contraseña_local',
-        'HOST': 'localhost',
-        'PORT': '3306',
-    }
-}
+DB_NAME=certichain_db
+DB_USER=tu_usuario_local
+DB_PASSWORD=tu_contraseña_local
+DB_HOST=localhost
+DB_PORT=3306
 ```
 
 ##Ejecutar Migraciones
 
 ```bash
+cd certichain
 python manage.py migrate
 ```
 
