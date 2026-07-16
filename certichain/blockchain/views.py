@@ -2,10 +2,13 @@ from django.shortcuts import render
 
 # Create your views here.
 import json
+import secrets
 from django.http import JsonResponse, HttpResponse, Http404
 from django.views.decorators.csrf import csrf_exempt
-from .models import BloqueModel, CertificadoModel
-from .blockchain_core import calcular_sha256, verificar_prueba_merkle, validar_cadena
+from django.contrib.auth import authenticate
+from .models import BloqueModel, CertificadoModel, AuthToken
+from .blockchain_core import calcular_sha256, verificar_prueba_merkle, validar_cadena, ejecutar_minado
+from .auth import requiere_autenticacion
 
 # Tamaño máximo aceptado para un PDF de certificado (10 MB)
 MAX_TAMANO_PDF_BYTES = 10 * 1024 * 1024
@@ -18,7 +21,7 @@ def listar_blockchain(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Método no permitido. Use GET.'}, status=405)
         
-    bloques = BloqueModel.objects.order_by('index')
+    bloques = BloqueModel.objects.select_related('firmante').order_by('index')
     lista_bloques = []
     
     for b in bloques:
@@ -28,7 +31,8 @@ def listar_blockchain(request):
             'merkle_root': b.merkle_root,
             'previous_hash': b.previous_hash,
             'block_hash': b.block_hash,
-            'total_certificados': b.certificados.count() # Relación FK inversa
+            'total_certificados': b.certificados.count(), # Relación FK inversa
+            'firmante': b.firmante.username if b.firmante else None
         })
         
     return JsonResponse({'longitud_cadena': len(lista_bloques), 'blockchain': lista_bloques}, safe=False)
@@ -97,7 +101,8 @@ def _construir_respuesta_verificacion(certificado):
             'hash_bloque_anterior': certificado.bloque.previous_hash,
             'fecha_sellado': certificado.bloque.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
             'prueba_merkle': certificado.merkle_proof,
-            'prueba_verificada': prueba_valida
+            'prueba_verificada': prueba_valida,
+            'firmante': certificado.bloque.firmante.username if certificado.bloque.firmante else None
         }
     }, status=200)
 
@@ -176,6 +181,7 @@ def verificar_certificado_pdf(request):
 
 
 @csrf_exempt
+@requiere_autenticacion
 def registrar_certificado(request):
     """
     Endpoint POST (multipart/form-data): registra un nuevo certificado a
@@ -266,3 +272,77 @@ def descargar_certificado_pdf(request, codigo_unico):
     respuesta = HttpResponse(bytes(certificado.archivo_pdf), content_type='application/pdf')
     respuesta['Content-Disposition'] = f'inline; filename="{certificado.codigo_unico}.pdf"'
     return respuesta
+
+
+@csrf_exempt
+def login_view(request):
+    """
+    Endpoint POST (JSON): { "username": "...", "password": "..." }
+
+    Autentica contra el sistema de usuarios de Django (django.contrib.auth).
+    Solo usuarios con is_staff=True (autoridad universitaria) reciben token.
+    Cada login genera un token nuevo y elimina cualquier sesión anterior
+    de ese usuario (solo puede haber una sesión activa a la vez).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido. Use POST.'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Formato JSON inválido.'}, status=400)
+
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return JsonResponse({'error': 'Faltan los campos username y/o password.'}, status=400)
+
+    usuario = authenticate(request, username=username, password=password)
+
+    if usuario is None:
+        return JsonResponse({'error': 'Usuario o contraseña incorrectos.'}, status=401)
+
+    if not usuario.is_staff:
+        return JsonResponse({'error': 'Este usuario no tiene permisos de autoridad universitaria.'}, status=403)
+
+    # Rotamos el token: uno nuevo por cada login, invalida cualquier sesión anterior
+    AuthToken.objects.filter(user=usuario).delete()
+    nuevo_token = secrets.token_hex(32)
+    AuthToken.objects.create(user=usuario, token=nuevo_token)
+
+    return JsonResponse({'token': nuevo_token, 'username': usuario.username}, status=200)
+
+
+@csrf_exempt
+def logout_view(request):
+    """
+    Endpoint POST: invalida el token enviado en el header Authorization,
+    si existe. Siempre responde 200, incluso si el token ya no era válido
+    (cerrar sesión dos veces no debería ser un error).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido. Use POST.'}, status=405)
+
+    header_auth = request.META.get('HTTP_AUTHORIZATION', '')
+    if header_auth.startswith('Bearer '):
+        token_valor = header_auth.split(' ', 1)[1].strip()
+        AuthToken.objects.filter(token=token_valor).delete()
+
+    return JsonResponse({'mensaje': 'Sesión cerrada.'}, status=200)
+
+
+@csrf_exempt
+@requiere_autenticacion
+def minar_bloques_view(request):
+    """
+    Endpoint POST protegido: ejecuta el mismo minado que
+    'python manage.py minar_bloques', pero disparado desde la API por
+    una autoridad autenticada, en vez de requerir acceso a la terminal
+    del servidor.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido. Use POST.'}, status=405)
+
+    resultado = ejecutar_minado(usuario=request.usuario_autenticado)
+    return JsonResponse(resultado, status=200)

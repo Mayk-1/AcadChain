@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 class BloqueModel(models.Model):
     """
@@ -9,6 +10,22 @@ class BloqueModel(models.Model):
     merkle_root = models.CharField(max_length=64, verbose_name="Raíz de Merkle")
     previous_hash = models.CharField(max_length=64, verbose_name="Hash del Bloque Anterior")
     block_hash = models.CharField(max_length=64, unique=True, verbose_name="Hash del Bloque Actual")
+
+    # Proof of Authority (nivel 2): qué autoridad selló este bloque, y su
+    # firma digital sobre el block_hash. Quedan en null para bloques
+    # minados sin una autoridad autenticada de por medio (por ejemplo,
+    # desde la terminal sin el flag --usuario). Un bloque sin firma no
+    # es necesariamente inválido, pero validar_cadena() sí distingue
+    # bloques firmados de los que no lo están.
+    firmante = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bloques_firmados",
+        verbose_name="Autoridad que selló el bloque"
+    )
+    firma_digital = models.TextField(null=True, blank=True, editable=False, verbose_name="Firma digital (base64)")
 
     def __str__(self):
         return f"Bloque #{self.index} - Hash: {self.block_hash[:10]}..."
@@ -50,3 +67,41 @@ class CertificadoModel(models.Model):
 
     def __str__(self):
         return f"{self.codigo_unico} - {self.nombre_alumno}"
+
+
+class AuthToken(models.Model):
+    """
+    Token simple de autenticación (Proof of Authority, nivel 1): representa
+    una sesión activa de un usuario autorizado (is_staff=True). Se genera
+    al hacer login y se exige en el header 'Authorization: Bearer <token>'
+    para las operaciones sensibles (registrar certificados, minar bloques).
+
+    Es OneToOne a propósito: cada login nuevo reemplaza el token anterior,
+    así que solo puede haber una sesión activa por usuario a la vez.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="auth_token")
+    token = models.CharField(max_length=64, unique=True)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Token de {self.user.username} (creado {self.creado:%Y-%m-%d %H:%M})"
+
+
+class AutoridadClave(models.Model):
+    """
+    Proof of Authority (nivel 2): par de llaves RSA de una autoridad
+    (un usuario is_staff). La llave privada se usa para firmar los
+    bloques que esa autoridad mina; la pública sirve para que cualquiera
+    (incluida validar_cadena) pueda comprobar esa firma después.
+
+    La llave privada NUNCA se expone por ningún endpoint ni se muestra
+    en el admin de Django (ver AutoridadClaveAdmin) — es la única razón
+    de ser de este modelo separado, en vez de guardarlo en AuthToken.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="autoridad_clave")
+    llave_privada_pem = models.TextField(editable=False)
+    llave_publica_pem = models.TextField(editable=False)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Llaves de {self.user.username}"

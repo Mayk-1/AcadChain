@@ -1,6 +1,8 @@
 import hashlib
 from typing import List, Union
-from .models import BloqueModel
+from django.contrib.auth.models import User
+from .models import BloqueModel, CertificadoModel, AutoridadClave
+from . import firma as firma_digital
 
 def calcular_sha256(datos: Union[str, bytes]) -> str:
     """Calcula el hash SHA-256 de una cadena de texto o para archivos pdf."""
@@ -131,16 +133,23 @@ def validar_cadena() -> dict:
     2. El previous_hash de cada bloque coincide exactamente con el
        block_hash del bloque anterior. Si alguien borró, insertó o
        reordenó un bloque, el eslabón se rompe y esto lo detecta.
+    3. Si el bloque tiene firma digital (Proof of Authority, nivel 2),
+       confirma que la firma corresponde efectivamente al block_hash y
+       a la llave pública de quien aparece como firmante. Si alguien
+       cambiara el 'firmante' de un bloque directo en MySQL (para
+       adjudicarle el sello a otra autoridad), esto lo detecta: la
+       firma solo es válida con la llave privada original.
 
     Es una verificación rápida: O(número de bloques), no recalcula
     los Merkle roots desde los certificados (para eso existe una
     auditoría más profunda y más costosa, aparte).
     """
-    bloques = list(BloqueModel.objects.order_by('index'))
+    bloques = list(BloqueModel.objects.select_related('firmante').order_by('index'))
     errores = []
+    detalle_bloques = []
 
     if not bloques:
-        return {'valida': True, 'bloques_verificados': 0, 'errores': []}
+        return {'valida': True, 'bloques_verificados': 0, 'errores': [], 'bloques': []}
 
     bloque_anterior = None
     for bloque in bloques:
@@ -178,12 +187,41 @@ def validar_cadena() -> dict:
                     'detalle': f'Se esperaba el índice {bloque_anterior.index + 1} y se encontró {bloque.index}.'
                 })
 
+        # 3. Verificar la firma digital (Proof of Authority), si existe
+        firma_valida = None  # None = bloque sin firma (no aplica, no es error)
+        if bloque.firmante and bloque.firma_digital:
+            clave = AutoridadClave.objects.filter(user=bloque.firmante).first()
+            if not clave:
+                firma_valida = False
+                errores.append({
+                    'bloque_index': bloque.index,
+                    'tipo': 'llave_publica_no_encontrada',
+                    'detalle': f'El bloque dice estar firmado por "{bloque.firmante.username}", pero no se encontró su llave pública registrada.'
+                })
+            else:
+                firma_valida = firma_digital.verificar_firma(
+                    clave.llave_publica_pem, bloque.block_hash, bloque.firma_digital
+                )
+                if not firma_valida:
+                    errores.append({
+                        'bloque_index': bloque.index,
+                        'tipo': 'firma_invalida',
+                        'detalle': f'La firma digital del bloque no corresponde a la llave pública de "{bloque.firmante.username}". El firmante pudo haber sido alterado.'
+                    })
+
+        detalle_bloques.append({
+            'index': bloque.index,
+            'firmante': bloque.firmante.username if bloque.firmante else None,
+            'firma_valida': firma_valida
+        })
+
         bloque_anterior = bloque
 
     return {
         'valida': len(errores) == 0,
         'bloques_verificados': len(bloques),
-        'errores': errores
+        'errores': errores,
+        'bloques': detalle_bloques
     }
 
 
@@ -208,3 +246,96 @@ def obtener_o_crear_genesis() -> BloqueModel:
             block_hash=hash_bloque
         )
     return genesis
+
+
+def obtener_o_crear_llaves(usuario: User) -> AutoridadClave:
+    """
+    Devuelve el par de llaves RSA de una autoridad, generándolo la
+    primera vez que esa autoridad mina un bloque. Las llaves persisten
+    en la base de datos para que se puedan reutilizar en futuros
+    minados y para que validar_cadena() pueda verificar firmas de
+    bloques ya sellados en el pasado.
+    """
+    autoridad_clave = AutoridadClave.objects.filter(user=usuario).first()
+    if autoridad_clave:
+        return autoridad_clave
+
+    pem_privada, pem_publica = firma_digital.generar_par_llaves()
+    return AutoridadClave.objects.create(
+        user=usuario,
+        llave_privada_pem=pem_privada,
+        llave_publica_pem=pem_publica
+    )
+
+
+def ejecutar_minado(tamano_lote: int = 1000, usuario: User = None) -> dict:
+    """
+    Agrupa los certificados pendientes (bloque=None) en bloques nuevos,
+    de a lo más 'tamano_lote' por bloque. Es la misma lógica que usa el
+    comando de terminal 'python manage.py minar_bloques', extraída aquí
+    para que también la pueda llamar el endpoint de la API (ambos deben
+    comportarse exactamente igual, así que no se duplica el código).
+
+    Si se pasa 'usuario' (una autoridad autenticada, is_staff=True),
+    cada bloque nuevo queda firmado digitalmente con la llave privada
+    de esa autoridad (Proof of Authority, nivel 2). Si no se pasa
+    ningún usuario, el bloque se crea sin firma (firmante=None).
+    """
+    obtener_o_crear_genesis()
+
+    certificados_pendientes = CertificadoModel.objects.filter(bloque__isnull=True).order_by('id')
+    total_pendientes = certificados_pendientes.count()
+
+    if total_pendientes == 0:
+        return {'bloques_creados': 0, 'certificados_procesados': 0, 'bloques': []}
+
+    autoridad_clave = obtener_o_crear_llaves(usuario) if usuario else None
+
+    lista_certificados = list(certificados_pendientes)
+    bloques_creados = []
+
+    for i in range(0, len(lista_certificados), tamano_lote):
+        lote_actual = lista_certificados[i:i + tamano_lote]
+        lista_hashes = [cert.hash_certificado for cert in lote_actual]
+
+        arbol_merkle = MerkleTree(lista_hashes)
+        merkle_root_actual = arbol_merkle.root
+
+        ultimo_bloque = BloqueModel.objects.order_by('-index').first()
+        nuevo_index = ultimo_bloque.index + 1
+        previous_hash = ultimo_bloque.block_hash
+
+        string_contenido_bloque = f"{nuevo_index}{merkle_root_actual}{previous_hash}"
+        hash_bloque_actual = calcular_sha256(string_contenido_bloque)
+
+        firma_bloque = None
+        if autoridad_clave:
+            firma_bloque = firma_digital.firmar(autoridad_clave.llave_privada_pem, hash_bloque_actual)
+
+        nuevo_bloque = BloqueModel.objects.create(
+            index=nuevo_index,
+            merkle_root=merkle_root_actual,
+            previous_hash=previous_hash,
+            block_hash=hash_bloque_actual,
+            firmante=usuario,
+            firma_digital=firma_bloque
+        )
+
+        for cert, prueba_cert in zip(lote_actual, arbol_merkle.proofs):
+            cert.bloque = nuevo_bloque
+            cert.merkle_proof = prueba_cert
+
+        CertificadoModel.objects.bulk_update(lote_actual, ['bloque', 'merkle_proof'])
+
+        bloques_creados.append({
+            'index': nuevo_index,
+            'block_hash': hash_bloque_actual,
+            'total_certificados': len(lote_actual),
+            'firmante': usuario.username if usuario else None
+        })
+
+    return {
+        'bloques_creados': len(bloques_creados),
+        'certificados_procesados': len(lista_certificados),
+        'bloques': bloques_creados
+    }

@@ -9,4 +9,7 @@ urlpatterns = [
     path('api/registrar-certificado/', views.registrar_certificado, name='registrar_certificado'),
     path('api/certificado/<str:codigo_unico>/pdf/', views.descargar_certificado_pdf, name='descargar_certificado_pdf'),
     path('api/validar-cadena/', views.validar_integridad_cadena, name='validar_integridad_cadena'),
+    path('api/login/', views.login_view, name='login_view'),
+    path('api/logout/', views.logout_view, name='logout_view'),
+    path('api/minar/', views.minar_bloques_view, name='minar_bloques_view'),
 ]
