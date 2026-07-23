@@ -29,8 +29,8 @@ git pull origin main
 ### Crear y activar el entorno virtual
 
 ```bash
-python -m venv env
-env\Scripts\activate
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
 ### Instalar Dependencias
