@@ -34,20 +34,18 @@ class MerkleTree:
             return
 
         self.hojas = list(lista_hashes)
-        # Guardamos cada nivel del árbol (hojas -> ... -> raíz) para
-        # poder reconstruir después el camino de cada hoja.
+        
         self.niveles = [self.hojas]
         self.root = self._construir_arbol(list(lista_hashes))
         self.proofs = self._generar_pruebas()
 
     def _construir_arbol(self, nodos: List[str]) -> str:
-        # Caso base: cuando solo queda un nodo, esa es la Raíz de Merkle (Merkle Root)
+        # cuando solo queda un nodo, esa es la Raíz de Merkle (Merkle Root)
         if len(nodos) == 1:
             return nodos[0]
         
         nuevo_nivel = []
         
-        # Iteramos de 2 en 2 para emparejar los nodos
         for i in range(0, len(nodos), 2):
             nodo_izquierdo = nodos[i]
             
@@ -57,12 +55,12 @@ class MerkleTree:
             else:
                 nodo_derecho = nodos[i]
             
-            # Combinamos ambos hashes y calculamos el hash del padre
+            #combinamos
             hash_padre = calcular_sha256(nodo_izquierdo + nodo_derecho)
             nuevo_nivel.append(hash_padre)
 
         self.niveles.append(nuevo_nivel)
-        # Llamada recursiva para procesar el siguiente nivel hacia arriba
+        
         return self._construir_arbol(nuevo_nivel)
 
     def _generar_pruebas(self) -> List[List[dict]]:
@@ -74,7 +72,7 @@ class MerkleTree:
         """
         total_hojas = len(self.hojas)
         pruebas = [[] for _ in range(total_hojas)]
-        # posicion_actual[i] = índice de la hoja i dentro del nivel actual
+        # indice de hoja del nivel actual
         posicion_actual = list(range(total_hojas))
 
         # Recorremos todos los niveles menos el último (la raíz no tiene hermano)

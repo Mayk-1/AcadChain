@@ -67,13 +67,12 @@ def _construir_respuesta_verificacion(certificado):
             'autentico': False,
             'mensaje': 'El certificado existe pero aún está en la cola de procesamiento (no minado).'
         }, status=200)
+    
 
-    # Verificamos CRIPTOGRÁFICAMENTE que el certificado realmente
-    # pertenece a ese bloque, reconstruyendo la raíz de Merkle desde su
-    # hash y su prueba guardada. No nos basta con que la base de datos
-    # diga que están relacionados: si alguien edita un registro directo
-    # en MySQL, esta verificación lo detecta porque la raíz recalculada
-    # ya no coincidiría con la del bloque.
+    #Verificación criptográfica de la prueba de Merkle
+    #reconstruimos la raiz Merkle desde el hash del certificado y la prueba guardada
+    #comparamos con la raiz del bloque
+
     prueba_valida = verificar_prueba_merkle(
         hash_hoja=certificado.hash_certificado,
         prueba=certificado.merkle_proof,
@@ -117,14 +116,12 @@ def verificar_certificado(request):
         return JsonResponse({'error': 'Método no permitido. Use POST.'}, status=405)
         
     try:
-        # Leer los datos JSON que envía el cliente
         data = json.loads(request.body)
         codigo = data.get('codigo_unico')
         
         if not codigo:
             return JsonResponse({'error': 'Falta el campo obligatorio: codigo_unico'}, status=400)
             
-        # Buscar el certificado en la base de datos
         certificado = CertificadoModel.objects.filter(codigo_unico=codigo).first()
         
         if not certificado:
@@ -143,12 +140,9 @@ def verificar_certificado(request):
 def verificar_certificado_pdf(request):
     """
     Endpoint POST (multipart/form-data): recibe directamente el archivo
-    PDF del certificado (campo 'certificado_pdf'), calcula su SHA-256
+    PDF del certificado (campo 'certificado_pdf') calcula su SHA-256
     real y busca si ese hash exacto corresponde a un certificado
-    registrado. No hace falta conocer el código_unico: el propio
-    documento es la prueba de qué certificado se está verificando.
-    Si el PDF fue modificado aunque sea un solo byte, el hash cambia
-    por completo y no va a encontrar coincidencia.
+    registrado.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido. Use POST.'}, status=405)
@@ -192,14 +186,13 @@ def registrar_certificado(request):
     en el árbol de Merkle ni en la blockchain (eso sigue dependiendo
     únicamente de 'hash_certificado').
 
-    Campos esperados (multipart/form-data):
+    Campos:
       - codigo_unico
       - nombre_alumno
       - carrera
       - certificado_pdf (archivo)
 
-    El certificado queda pendiente ('bloque' = None) hasta que corra el
-    siguiente 'python manage.py minar_bloques'.
+    El certificado queda pendiente ('bloque' = None) hasta el minado de registros pendientes.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido. Use POST.'}, status=405)
@@ -232,9 +225,7 @@ def registrar_certificado(request):
     if CertificadoModel.objects.filter(codigo_unico=codigo_unico).exists():
         return JsonResponse({'error': 'Ya existe un certificado registrado con ese codigo_unico.'}, status=409)
 
-    # Leemos el archivo UNA sola vez: un objeto de archivo no se puede
-    # leer dos veces (el segundo .read() devolvería vacío). Con esos
-    # mismos bytes calculamos el hash Y los guardamos como binario.
+    # Leemos el archivo UNA sola vez
     bytes_pdf = archivo.read()
     hash_certificado = calcular_sha256(bytes_pdf)
 
