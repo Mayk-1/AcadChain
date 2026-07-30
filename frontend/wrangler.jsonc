@@ -10,7 +10,7 @@
   // Acá está lo importante: no hay código de servidor, solo archivos.
   // Cloudflare sirve el contenido de ./frontend tal cual, como un CDN.
   "assets": {
-    "directory": "./frontend",
+    "directory": "./",
     "not_found_handling": "404-page"
   }
 }
