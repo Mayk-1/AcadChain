@@ -42,3 +42,6 @@ ENV/
 # Ignora los PDFs reales que se suban a la aplicación en el futuro
 media/
 certificados/
+
+#Collecstatic
+staticfiles/

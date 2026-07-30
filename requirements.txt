@@ -6,3 +6,7 @@ tzdata==2026.2
 python-decouple==3.8
 django-cors-headers==4.4.0
 cryptography>=42.0.0
+
+#railway
+gunicorn==23.0.0
+whitenoise==6.8.2
