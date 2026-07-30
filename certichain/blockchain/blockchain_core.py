@@ -1,6 +1,7 @@
 import hashlib
 from typing import List, Union
 from django.contrib.auth.models import User
+from django.db import transaction
 from .models import BloqueModel, CertificadoModel, AutoridadClave
 from . import firma as firma_digital
 
@@ -34,18 +35,20 @@ class MerkleTree:
             return
 
         self.hojas = list(lista_hashes)
-        
+        # Guardamos cada nivel del árbol (hojas -> ... -> raíz) para
+        # poder reconstruir después el camino de cada hoja.
         self.niveles = [self.hojas]
         self.root = self._construir_arbol(list(lista_hashes))
         self.proofs = self._generar_pruebas()
 
     def _construir_arbol(self, nodos: List[str]) -> str:
-        # cuando solo queda un nodo, esa es la Raíz de Merkle (Merkle Root)
+        # Caso base: cuando solo queda un nodo, esa es la Raíz de Merkle (Merkle Root)
         if len(nodos) == 1:
             return nodos[0]
         
         nuevo_nivel = []
         
+        # Iteramos de 2 en 2 para emparejar los nodos
         for i in range(0, len(nodos), 2):
             nodo_izquierdo = nodos[i]
             
@@ -55,12 +58,12 @@ class MerkleTree:
             else:
                 nodo_derecho = nodos[i]
             
-            #combinamos
+            # Combinamos ambos hashes y calculamos el hash del padre
             hash_padre = calcular_sha256(nodo_izquierdo + nodo_derecho)
             nuevo_nivel.append(hash_padre)
 
         self.niveles.append(nuevo_nivel)
-        
+        # Llamada recursiva para procesar el siguiente nivel hacia arriba
         return self._construir_arbol(nuevo_nivel)
 
     def _generar_pruebas(self) -> List[List[dict]]:
@@ -72,7 +75,7 @@ class MerkleTree:
         """
         total_hojas = len(self.hojas)
         pruebas = [[] for _ in range(total_hojas)]
-        # indice de hoja del nivel actual
+        # posicion_actual[i] = índice de la hoja i dentro del nivel actual
         posicion_actual = list(range(total_hojas))
 
         # Recorremos todos los niveles menos el último (la raíz no tiene hermano)
@@ -278,62 +281,95 @@ def ejecutar_minado(tamano_lote: int = 1000, usuario: User = None) -> dict:
     cada bloque nuevo queda firmado digitalmente con la llave privada
     de esa autoridad (Proof of Authority, nivel 2). Si no se pasa
     ningún usuario, el bloque se crea sin firma (firmante=None).
+
+    CONCURRENCIA: toda la operación corre dentro de una transacción y
+    toma un cerrojo (select_for_update) sobre la fila del último bloque.
+    Si dos mineros arrancan a la vez -- por ejemplo la tarea programada
+    diaria y alguien llamando a POST /api/minar/ desde la interfaz --
+    el segundo se queda esperando en esa consulta hasta que el primero
+    confirme, y recién entonces lee el estado ya actualizado.
+
+    Sin ese cerrojo, ambos leerían la MISMA lista de certificados
+    pendientes y el segundo podría asignar a un bloque nuevo
+    certificados que el primero ya selló, sobrescribiendo su
+    merkle_proof y dejando la prueba apuntando a un bloque distinto del
+    que realmente los contiene. La restricción unique del campo 'index'
+    no alcanza para evitar eso: protege contra índices duplicados, no
+    contra certificados asignados dos veces.
     """
-    obtener_o_crear_genesis()
+    with transaction.atomic():
+        obtener_o_crear_genesis()
 
-    certificados_pendientes = CertificadoModel.objects.filter(bloque__isnull=True).order_by('id')
-    total_pendientes = certificados_pendientes.count()
+        # EL CERROJO. Bloquea la fila del último bloque hasta el final de
+        # la transacción. No usamos el valor devuelto acá: lo volvemos a
+        # consultar dentro del bucle, porque cada iteración crea un bloque
+        # y necesita el anterior actualizado. Lo único que importa de esta
+        # línea es el efecto de bloqueo.
+        #
+        # Solo bloqueamos esta fila, y no también los certificados: en
+        # MySQL un select_for_update sobre la consulta de pendientes
+        # genera gap locks que pueden frenar el registro de certificados
+        # nuevos mientras dura el minado. Como este cerrojo ya serializa
+        # toda la función, el segundo no aportaría garantía extra.
+        BloqueModel.objects.select_for_update().order_by('-index').first()
 
-    if total_pendientes == 0:
-        return {'bloques_creados': 0, 'certificados_procesados': 0, 'bloques': []}
-
-    autoridad_clave = obtener_o_crear_llaves(usuario) if usuario else None
-
-    lista_certificados = list(certificados_pendientes)
-    bloques_creados = []
-
-    for i in range(0, len(lista_certificados), tamano_lote):
-        lote_actual = lista_certificados[i:i + tamano_lote]
-        lista_hashes = [cert.hash_certificado for cert in lote_actual]
-
-        arbol_merkle = MerkleTree(lista_hashes)
-        merkle_root_actual = arbol_merkle.root
-
-        ultimo_bloque = BloqueModel.objects.order_by('-index').first()
-        nuevo_index = ultimo_bloque.index + 1
-        previous_hash = ultimo_bloque.block_hash
-
-        string_contenido_bloque = f"{nuevo_index}{merkle_root_actual}{previous_hash}"
-        hash_bloque_actual = calcular_sha256(string_contenido_bloque)
-
-        firma_bloque = None
-        if autoridad_clave:
-            firma_bloque = firma_digital.firmar(autoridad_clave.llave_privada_pem, hash_bloque_actual)
-
-        nuevo_bloque = BloqueModel.objects.create(
-            index=nuevo_index,
-            merkle_root=merkle_root_actual,
-            previous_hash=previous_hash,
-            block_hash=hash_bloque_actual,
-            firmante=usuario,
-            firma_digital=firma_bloque
+        # La lectura de pendientes va DESPUÉS de tomar el cerrojo, y esto
+        # es lo que de verdad arregla el bug. Si estuviera antes, el
+        # segundo proceso ya se habría llevado la lista vieja en memoria
+        # antes de quedarse esperando, y el cerrojo no serviría de nada.
+        lista_certificados = list(
+            CertificadoModel.objects.filter(bloque__isnull=True).order_by('id')
         )
 
-        for cert, prueba_cert in zip(lote_actual, arbol_merkle.proofs):
-            cert.bloque = nuevo_bloque
-            cert.merkle_proof = prueba_cert
+        if not lista_certificados:
+            return {'bloques_creados': 0, 'certificados_procesados': 0, 'bloques': []}
 
-        CertificadoModel.objects.bulk_update(lote_actual, ['bloque', 'merkle_proof'])
+        autoridad_clave = obtener_o_crear_llaves(usuario) if usuario else None
 
-        bloques_creados.append({
-            'index': nuevo_index,
-            'block_hash': hash_bloque_actual,
-            'total_certificados': len(lote_actual),
-            'firmante': usuario.username if usuario else None
-        })
+        bloques_creados = []
 
-    return {
-        'bloques_creados': len(bloques_creados),
-        'certificados_procesados': len(lista_certificados),
-        'bloques': bloques_creados
-    }
+        for i in range(0, len(lista_certificados), tamano_lote):
+            lote_actual = lista_certificados[i:i + tamano_lote]
+            lista_hashes = [cert.hash_certificado for cert in lote_actual]
+
+            arbol_merkle = MerkleTree(lista_hashes)
+            merkle_root_actual = arbol_merkle.root
+
+            ultimo_bloque = BloqueModel.objects.order_by('-index').first()
+            nuevo_index = ultimo_bloque.index + 1
+            previous_hash = ultimo_bloque.block_hash
+
+            string_contenido_bloque = f"{nuevo_index}{merkle_root_actual}{previous_hash}"
+            hash_bloque_actual = calcular_sha256(string_contenido_bloque)
+
+            firma_bloque = None
+            if autoridad_clave:
+                firma_bloque = firma_digital.firmar(autoridad_clave.llave_privada_pem, hash_bloque_actual)
+
+            nuevo_bloque = BloqueModel.objects.create(
+                index=nuevo_index,
+                merkle_root=merkle_root_actual,
+                previous_hash=previous_hash,
+                block_hash=hash_bloque_actual,
+                firmante=usuario,
+                firma_digital=firma_bloque
+            )
+
+            for cert, prueba_cert in zip(lote_actual, arbol_merkle.proofs):
+                cert.bloque = nuevo_bloque
+                cert.merkle_proof = prueba_cert
+
+            CertificadoModel.objects.bulk_update(lote_actual, ['bloque', 'merkle_proof'])
+
+            bloques_creados.append({
+                'index': nuevo_index,
+                'block_hash': hash_bloque_actual,
+                'total_certificados': len(lote_actual),
+                'firmante': usuario.username if usuario else None
+            })
+
+        return {
+            'bloques_creados': len(bloques_creados),
+            'certificados_procesados': len(lista_certificados),
+            'bloques': bloques_creados
+        }
