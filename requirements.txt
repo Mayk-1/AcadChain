@@ -4,7 +4,7 @@ mysqlclient==2.2.8
 sqlparse==0.5.5
 tzdata==2026.2
 python-decouple==3.8
-django-cors-headers==4.4.0
+django-cors-headers>=4.9.0
 cryptography>=42.0.0
 
 #railway
