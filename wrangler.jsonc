@@ -1,0 +1,16 @@
+{
+  // Nombre del Worker. Define la URL: acadchain.<tu-subdominio>.workers.dev
+  "name": "acadchain",
+
+  // Fecha de compatibilidad: fija el comportamiento de la plataforma a
+  // como era en esta fecha, para que un cambio futuro de Cloudflare no
+  // rompa el sitio sin aviso. No hace falta actualizarla.
+  "compatibility_date": "2026-07-29",
+
+  // Acá está lo importante: no hay código de servidor, solo archivos.
+  // Cloudflare sirve el contenido de ./frontend tal cual, como un CDN.
+  "assets": {
+    "directory": "./frontend",
+    "not_found_handling": "404-page"
+  }
+}
